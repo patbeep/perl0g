@@ -1,7 +1,9 @@
-# Perlog
+# Perlog iOS
 
-**Your life, logged.**
+Perlog is a free, local-first personal log for iPhone. It is built as a native SwiftUI/SwiftData iOS app and produces an unsigned IPA intended for Sideloadly.
 
-Native SwiftUI + SwiftData iOS personal log. iOS 17+; iPhone and iPad adaptive layouts. Local-first, no account, no ads, no usage paywall. The GitHub Actions workflow builds an unsigned IPA packaged for Sideloadly.
+## Build
+GitHub Actions uses macOS 15 + Xcode 16.4, generates the project with XcodeGen, builds a generic iOS device target, and packages `Perlog-unsigned.ipa`.
 
-The visual system intentionally uses native SwiftUI materials, layered translucency, specular borders, depth, spring-friendly controls, and safe-area-aware layouts to reproduce the supplied Perlog Liquid Glass reference without relying on private APIs.
+## Device support
+iPhone only, iOS 17+. The layout uses adaptive SwiftUI sizing and safe areas rather than fixed screenshot dimensions.

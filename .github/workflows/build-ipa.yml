@@ -22,12 +22,12 @@ jobs:
           brew install xcodegen
       - name: Generate Xcode project
         run: xcodegen generate
-      - name: Build iOS app
+      - name: Build unsigned iOS app
         run: |
           set -euo pipefail
           rm -rf build
           xcodebuild -project Perlog.xcodeproj -scheme Perlog -configuration Release -sdk iphoneos -destination 'generic/platform=iOS' -derivedDataPath build/DerivedData CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY='' DEVELOPMENT_TEAM='' build
-      - name: Package IPA for Sideloadly
+      - name: Package unsigned IPA for Sideloadly
         run: |
           set -euo pipefail
           APP="build/DerivedData/Build/Products/Release-iphoneos/Perlog.app"
@@ -41,7 +41,7 @@ jobs:
       - name: Upload IPA
         uses: actions/upload-artifact@v4
         with:
-          name: Perlog-IPA-for-Sideloadly
+          name: Perlog-IPA-unsigned
           path: build/Perlog-unsigned.ipa
           if-no-files-found: error
           retention-days: 14
