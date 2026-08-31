@@ -1,15 +1,16 @@
 import SwiftUI
 import SwiftData
+import UIKit
 import PhotosUI
+import UniformTypeIdentifiers
+
+// MARK: - App
 
 @main
 struct PerlogApp: App {
-    @StateObject private var themeStore = ThemeStore()
-
     var body: some Scene {
         WindowGroup {
-            PerlogRootView()
-                .environmentObject(themeStore)
+            RootView()
         }
         .modelContainer(for: LogEntry.self)
     }
@@ -24,50 +25,60 @@ enum LogType: String, Codable, CaseIterable, Identifiable {
 
     var title: String {
         switch self {
-        case .journal: return "Journal"
-        case .mood: return "Mood"
-        case .photo: return "Photo"
-        case .meal: return "Meal"
-        case .shopping: return "Shopping"
-        case .place: return "Place"
-        case .music: return "Music"
-        case .weight: return "Weight"
-        case .steps: return "Steps"
-        case .sleep: return "Sleep"
         case .todo: return "To-Do"
         case .divider: return "Divider"
+        default: return rawValue.capitalized
         }
     }
 
     var icon: String {
         switch self {
-        case .journal: return "square.and.pencil"
-        case .mood: return "face.smiling"
-        case .photo: return "photo"
+        case .journal: return "book.closed.fill"
+        case .mood: return "face.smiling.fill"
+        case .photo: return "photo.fill"
         case .meal: return "fork.knife"
-        case .shopping: return "bag"
-        case .place: return "mappin.and.ellipse"
+        case .shopping: return "bag.fill"
+        case .place: return "mappin.circle.fill"
         case .music: return "music.note"
-        case .weight: return "scalemass"
+        case .weight: return "scalemass.fill"
         case .steps: return "figure.walk"
-        case .sleep: return "bed.double"
+        case .sleep: return "bed.double.fill"
         case .todo: return "checklist"
-        case .divider: return "rectangle.split.3x1"
+        case .divider: return "rectangle.split.3x1.fill"
+        }
+    }
+
+    var accent: Color {
+        switch self {
+        case .journal: return .blue
+        case .mood: return .yellow
+        case .photo: return .purple
+        case .meal: return .orange
+        case .shopping: return .pink
+        case .place: return .green
+        case .music: return .purple
+        case .weight: return .cyan
+        case .steps: return .blue
+        case .sleep: return .indigo
+        case .todo: return .mint
+        case .divider: return .orange
         }
     }
 }
 
 enum Mood: String, Codable, CaseIterable, Identifiable {
-    case radiant, excited, happy, calm, neutral, tired, anxious, annoyed, sad
+    case radiant, happy, excited, calm, neutral, tired, anxious, annoyed, sad
+
     var id: String { rawValue }
+
     var emoji: String {
         switch self {
         case .radiant: return "☀️"
-        case .excited: return "🤩"
-        case .happy: return "😊"
-        case .calm: return "😌"
+        case .happy: return "🙂"
+        case .excited: return "✨"
+        case .calm: return "🌿"
         case .neutral: return "😐"
-        case .tired: return "😴"
+        case .tired: return "😪"
         case .anxious: return "😟"
         case .annoyed: return "😤"
         case .sad: return "😢"
@@ -78,10 +89,8 @@ enum Mood: String, Codable, CaseIterable, Identifiable {
 @Model
 final class LogEntry {
     var id: UUID
-    var createdAt: Date
-    var updatedAt: Date
-    var occurredAt: Date
-    var kindRaw: String
+    var date: Date
+    var typeRaw: String
     var title: String
     var bodyText: String
     var moodRaw: String?
@@ -91,13 +100,10 @@ final class LogEntry {
     var unit: String?
     var done: Bool
     var photos: [Data]
-    var urlString: String?
-    var reminderDate: Date?
-    var dividerLabel: String?
 
     init(
-        kind: LogType = .journal,
-        occurredAt: Date = .now,
+        type: LogType = .journal,
+        date: Date = .now,
         title: String = "",
         bodyText: String = "",
         mood: Mood? = nil,
@@ -106,16 +112,11 @@ final class LogEntry {
         value: Double? = nil,
         unit: String? = nil,
         done: Bool = false,
-        photos: [Data] = [],
-        urlString: String? = nil,
-        reminderDate: Date? = nil,
-        dividerLabel: String? = nil
+        photos: [Data] = []
     ) {
         self.id = UUID()
-        self.createdAt = .now
-        self.updatedAt = .now
-        self.occurredAt = occurredAt
-        self.kindRaw = kind.rawValue
+        self.date = date
+        self.typeRaw = type.rawValue
         self.title = title
         self.bodyText = bodyText
         self.moodRaw = mood?.rawValue
@@ -125,242 +126,324 @@ final class LogEntry {
         self.unit = unit
         self.done = done
         self.photos = photos
-        self.urlString = urlString
-        self.reminderDate = reminderDate
-        self.dividerLabel = dividerLabel
     }
 
-    var kind: LogType {
-        get { LogType(rawValue: kindRaw) ?? .journal }
-        set { kindRaw = newValue.rawValue }
+    var type: LogType {
+        get { LogType(rawValue: typeRaw) ?? .journal }
+        set { typeRaw = newValue.rawValue }
     }
 
     var mood: Mood? {
-        get { moodRaw.flatMap { Mood(rawValue: $0) } }
+        get { moodRaw.flatMap(Mood.init(rawValue:)) }
         set { moodRaw = newValue?.rawValue }
     }
 }
 
 // MARK: - Theme
 
-struct ThemeConfiguration: Codable {
-    var name = "Grey"
-    var hue = 215.0
-    var accentHex = "#5D8DFF"
-    var backgroundHex = "#E6E9EF"
-    var glassHex = "#FFFFFF"
-    var primaryHex = "#14161B"
-    var secondaryHex = "#646A76"
+enum PerlogThemeName: String, CaseIterable, Identifiable {
+    case black = "Black"
+    case grey = "Grey"
+    case white = "White"
+    case iridescent = "Iridescent"
+    case custom = "Custom"
+
+    var id: String { rawValue }
 }
 
 struct PerlogPalette {
     let background: Color
-    let glassTint: Color
-    let primary: Color
-    let secondary: Color
+    let backgroundSecondary: Color
+    let surface: Color
+    let surfaceStrong: Color
+    let text: Color
+    let secondaryText: Color
     let accent: Color
+    let border: Color
     let isDark: Bool
 }
 
+@MainActor
 final class ThemeStore: ObservableObject {
-    @Published var configuration: ThemeConfiguration {
-        didSet { persist() }
-    }
+    @Published var name: PerlogThemeName
+    @Published var hue: Double
+    @Published var customAccent: Color
+    @Published var customBackground: Color
+    @Published var customGlass: Color
+    @Published var customText: Color
+    @Published var customSecondaryText: Color
 
-    private let key = "Perlog.ThemeConfiguration.v2"
+    private let defaults = UserDefaults.standard
 
     init() {
-        if let data = UserDefaults.standard.data(forKey: key),
-           let saved = try? JSONDecoder().decode(ThemeConfiguration.self, from: data) {
-            configuration = saved
-        } else {
-            configuration = ThemeConfiguration()
-        }
+        let raw = UserDefaults.standard.string(forKey: "perlog.theme") ?? PerlogThemeName.black.rawValue
+        name = PerlogThemeName(rawValue: raw) ?? .black
+        hue = UserDefaults.standard.object(forKey: "perlog.hue") as? Double ?? 220
+        customAccent = Color(hex: UserDefaults.standard.string(forKey: "perlog.customAccent") ?? "5B8CFF")
+        customBackground = Color(hex: UserDefaults.standard.string(forKey: "perlog.customBackground") ?? "101217")
+        customGlass = Color(hex: UserDefaults.standard.string(forKey: "perlog.customGlass") ?? "1C2230")
+        customText = Color(hex: UserDefaults.standard.string(forKey: "perlog.customText") ?? "FFFFFF")
+        customSecondaryText = Color(hex: UserDefaults.standard.string(forKey: "perlog.customSecondaryText") ?? "AEB5C3")
     }
-
-    var name: String { configuration.name }
-    var hue: Double { configuration.hue }
 
     var palette: PerlogPalette {
-        switch configuration.name {
-        case "Black":
+        switch name {
+        case .black:
             return PerlogPalette(
-                background: .black,
-                glassTint: .white,
-                primary: .white,
-                secondary: .white.opacity(0.65),
-                accent: Color(hex: configuration.accentHex),
+                background: Color(hex: "080A0F"),
+                backgroundSecondary: Color(hex: "10141C"),
+                surface: Color.white.opacity(0.075),
+                surfaceStrong: Color.white.opacity(0.115),
+                text: .white,
+                secondaryText: Color(hex: "AEB5C3"),
+                accent: Color(hue: hue / 360.0, saturation: 0.62, brightness: 1.0),
+                border: Color.white.opacity(0.15),
                 isDark: true
             )
-        case "White":
+        case .grey:
             return PerlogPalette(
-                background: Color(white: 0.965),
-                glassTint: .white,
-                primary: Color(white: 0.08),
-                secondary: Color(white: 0.38),
-                accent: Color(hex: configuration.accentHex),
+                background: Color(hex: "171A20"),
+                backgroundSecondary: Color(hex: "22262E"),
+                surface: Color.white.opacity(0.09),
+                surfaceStrong: Color.white.opacity(0.13),
+                text: .white,
+                secondaryText: Color(hex: "B7BCC6"),
+                accent: Color(hue: hue / 360.0, saturation: 0.55, brightness: 1),
+                border: Color.white.opacity(0.17),
+                isDark: true
+            )
+        case .white:
+            return PerlogPalette(
+                background: Color(hex: "F4F6FA"),
+                backgroundSecondary: Color(hex: "E9EDF4"),
+                surface: Color.white.opacity(0.74),
+                surfaceStrong: Color.white.opacity(0.9),
+                text: Color(hex: "12151B"),
+                secondaryText: Color(hex: "626977"),
+                accent: Color(hue: hue / 360.0, saturation: 0.62, brightness: 0.95),
+                border: Color.white.opacity(0.9),
                 isDark: false
             )
-        case "Iridescent":
-            let base = Color(hue: configuration.hue / 360.0, saturation: 0.11, brightness: 0.96)
+        case .iridescent:
+            let c = Color(hue: hue / 360.0, saturation: 0.68, brightness: 1)
             return PerlogPalette(
-                background: base,
-                glassTint: .white,
-                primary: Color(white: 0.09),
-                secondary: Color(white: 0.38),
-                accent: Color(hue: configuration.hue / 360.0, saturation: 0.72, brightness: 0.98),
-                isDark: false
+                background: Color(hex: "0B0D14"),
+                backgroundSecondary: Color(hex: "151224"),
+                surface: c.opacity(0.09),
+                surfaceStrong: c.opacity(0.15),
+                text: .white,
+                secondaryText: Color(hex: "C1C5D2"),
+                accent: c,
+                border: c.opacity(0.25),
+                isDark: true
             )
-        case "Custom":
+        case .custom:
+            let dark = customBackground.relativeLuminance < 0.45
             return PerlogPalette(
-                background: Color(hex: configuration.backgroundHex),
-                glassTint: Color(hex: configuration.glassHex),
-                primary: Color(hex: configuration.primaryHex),
-                secondary: Color(hex: configuration.secondaryHex),
-                accent: Color(hex: configuration.accentHex),
-                isDark: luminance(hex: configuration.backgroundHex) < 0.42
-            )
-        default:
-            return PerlogPalette(
-                background: Color(hex: "#E6E9EF"),
-                glassTint: .white,
-                primary: Color(hex: "#14161B"),
-                secondary: Color(hex: "#646A76"),
-                accent: Color(hex: "#5D8DFF"),
-                isDark: false
+                background: customBackground,
+                backgroundSecondary: customBackground.opacity(0.78),
+                surface: customGlass.opacity(0.48),
+                surfaceStrong: customGlass.opacity(0.70),
+                text: customText,
+                secondaryText: customSecondaryText,
+                accent: customAccent,
+                border: customText.opacity(dark ? 0.16 : 0.12),
+                isDark: dark
             )
         }
     }
 
-    func select(_ name: String) {
-        configuration.name = name
-        if name == "Iridescent" && configuration.hue == 0 { configuration.hue = 215 }
+    func select(_ value: PerlogThemeName) {
+        name = value
+        persist()
     }
 
-    func restoreDefaults() {
-        configuration = ThemeConfiguration()
+    func setHue(_ value: Double) {
+        hue = value
+        defaults.set(value, forKey: "perlog.hue")
     }
 
-    func setColor(_ color: Color, keyPath: WritableKeyPath<ThemeConfiguration, String>) {
-        configuration[keyPath: keyPath] = color.hexString
+    func setCustomAccent(_ color: Color) { customAccent = color; persistCustom() }
+    func setCustomBackground(_ color: Color) { customBackground = color; persistCustom() }
+    func setCustomGlass(_ color: Color) { customGlass = color; persistCustom() }
+    func setCustomText(_ color: Color) { customText = color; persistCustom() }
+    func setCustomSecondaryText(_ color: Color) { customSecondaryText = color; persistCustom() }
+
+    func resetCustom() {
+        customAccent = Color(hex: "5B8CFF")
+        customBackground = Color(hex: "101217")
+        customGlass = Color(hex: "1C2230")
+        customText = Color(hex: "FFFFFF")
+        customSecondaryText = Color(hex: "AEB5C3")
+        persistCustom()
     }
 
-    private func persist() {
-        if let data = try? JSONEncoder().encode(configuration) {
-            UserDefaults.standard.set(data, forKey: key)
-        }
-    }
+    func resetIridescent() { setHue(220) }
 
-    private func luminance(hex: String) -> Double {
-        let c = Color(hex: hex).components
-        return 0.2126 * c.r + 0.7152 * c.g + 0.0722 * c.b
+    private func persist() { defaults.set(name.rawValue, forKey: "perlog.theme") }
+
+    private func persistCustom() {
+        defaults.set(customAccent.hexString, forKey: "perlog.customAccent")
+        defaults.set(customBackground.hexString, forKey: "perlog.customBackground")
+        defaults.set(customGlass.hexString, forKey: "perlog.customGlass")
+        defaults.set(customText.hexString, forKey: "perlog.customText")
+        defaults.set(customSecondaryText.hexString, forKey: "perlog.customSecondaryText")
+        objectWillChange.send()
     }
 }
 
 extension Color {
     init(hex: String) {
-        let cleaned = hex.trimmingCharacters(in: CharacterSet(charactersIn: "#"))
+        let cleaned = hex.replacingOccurrences(of: "#", with: "")
         let value = UInt64(cleaned, radix: 16) ?? 0
         self.init(
-            red: Double((value >> 16) & 255) / 255.0,
-            green: Double((value >> 8) & 255) / 255.0,
-            blue: Double(value & 255) / 255.0
+            red: Double((value >> 16) & 0xFF) / 255,
+            green: Double((value >> 8) & 0xFF) / 255,
+            blue: Double(value & 0xFF) / 255
         )
     }
 
     var hexString: String {
-        #if os(iOS)
-        let ui = UIColor(self)
-        var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
-        if ui.getRed(&r, green: &g, blue: &b, alpha: &a) {
-            return String(format: "#%02X%02X%02X", Int(r * 255), Int(g * 255), Int(b * 255))
-        }
-        #endif
-        return "#5D8DFF"
+        let resolved = UIColor(self)
+        var r: CGFloat = 0
+        var g: CGFloat = 0
+        var b: CGFloat = 0
+        var a: CGFloat = 0
+        guard resolved.getRed(&r, green: &g, blue: &b, alpha: &a) else { return "FFFFFF" }
+        return String(format: "%02X%02X%02X", Int(max(0, min(1, r)) * 255), Int(max(0, min(1, g)) * 255), Int(max(0, min(1, b)) * 255))
     }
 
-    var components: (r: Double, g: Double, b: Double) {
-        #if os(iOS)
-        let ui = UIColor(self)
-        var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
-        if ui.getRed(&r, green: &g, blue: &b, alpha: &a) {
-            return (Double(r), Double(g), Double(b))
+    var relativeLuminance: Double {
+        #if canImport(UIKit)
+        let resolved = UIColor(self)
+        var r: CGFloat = 0
+        var g: CGFloat = 0
+        var b: CGFloat = 0
+        var a: CGFloat = 0
+        if resolved.getRed(&r, green: &g, blue: &b, alpha: &a) {
+            func linear(_ v: CGFloat) -> Double { let x = Double(v); return x <= 0.03928 ? x / 12.92 : pow((x + 0.055) / 1.055, 2.4) }
+            return 0.2126 * linear(r) + 0.7152 * linear(g) + 0.0722 * linear(b)
         }
         #endif
-        return (0.5, 0.5, 0.5)
+        return 0.15
     }
 }
 
-// MARK: - Glass Design System
+// MARK: - Reusable visual system
 
-struct GlassSurface<Content: View>: View {
+struct PerlogBackground: View {
     @EnvironmentObject private var theme: ThemeStore
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
-    let content: Content
-    var radius: CGFloat = 26
-
-    init(radius: CGFloat = 26, @ViewBuilder content: () -> Content) {
-        self.radius = radius
-        self.content = content()
-    }
 
     var body: some View {
-        content
-            .padding(16)
-            .background(
-                reduceTransparency
-                    ? AnyShapeStyle(theme.palette.glassTint.opacity(0.92))
-                    : AnyShapeStyle(.ultraThinMaterial)
-            , in: RoundedRectangle(cornerRadius: radius, style: .continuous))
-            .overlay(
-                RoundedRectangle(cornerRadius: radius, style: .continuous)
-                    .stroke(.white.opacity(theme.palette.isDark ? 0.16 : 0.56), lineWidth: 1)
-            )
-            .shadow(color: .black.opacity(theme.palette.isDark ? 0.28 : 0.11), radius: 20, y: 8)
+        GeometryReader { proxy in
+            ZStack {
+                theme.palette.background
+                    .ignoresSafeArea()
+
+                if !reduceTransparency {
+                    Circle()
+                        .fill(theme.palette.accent.opacity(theme.name == .iridescent ? 0.22 : 0.10))
+                        .frame(width: min(proxy.size.width * 0.95, 390))
+                        .blur(radius: 70)
+                        .offset(x: proxy.size.width * 0.38, y: -proxy.size.height * 0.35)
+
+                    Circle()
+                        .fill(Color.purple.opacity(theme.name == .iridescent ? 0.13 : 0.055))
+                        .frame(width: min(proxy.size.width * 0.8, 330))
+                        .blur(radius: 80)
+                        .offset(x: -proxy.size.width * 0.4, y: proxy.size.height * 0.25)
+                }
+
+                if theme.name == .iridescent && !reduceTransparency {
+                    LinearGradient(
+                        colors: [
+                            theme.palette.accent.opacity(0.10),
+                            Color.purple.opacity(0.06),
+                            Color.cyan.opacity(0.08)
+                        ],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                    .ignoresSafeArea()
+                }
+            }
+        }
+        .allowsHitTesting(false)
     }
 }
 
-struct AmbientBackground: View {
+struct GlassCard<Content: View>: View {
     @EnvironmentObject private var theme: ThemeStore
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+    @ViewBuilder let content: () -> Content
 
     var body: some View {
-        ZStack {
-            theme.palette.background.ignoresSafeArea()
-            Circle()
-                .fill(theme.palette.accent.opacity(0.13))
-                .frame(width: 330)
-                .blur(radius: 80)
-                .offset(x: 150, y: -320)
-            Circle()
-                .fill(Color.purple.opacity(0.055))
-                .frame(width: 280)
-                .blur(radius: 85)
-                .offset(x: -160, y: 300)
-            if !reduceMotion {
-                Circle()
-                    .fill(theme.palette.accent.opacity(0.045))
-                    .frame(width: 210)
-                    .blur(radius: 70)
-                    .offset(x: -40, y: -30)
+        content()
+            .padding(16)
+            .background {
+                if reduceTransparency {
+                    RoundedRectangle(cornerRadius: 22, style: .continuous)
+                        .fill(theme.palette.surfaceStrong)
+                } else {
+                    RoundedRectangle(cornerRadius: 22, style: .continuous)
+                        .fill(.ultraThinMaterial)
+                        .overlay(RoundedRectangle(cornerRadius: 22, style: .continuous).fill(theme.palette.surface))
+                }
             }
+            .overlay(
+                RoundedRectangle(cornerRadius: 22, style: .continuous)
+                    .stroke(theme.palette.border, lineWidth: 0.8)
+            )
+            .shadow(color: .black.opacity(theme.palette.isDark ? 0.30 : 0.08), radius: 18, y: 9)
+    }
+}
+
+struct GlassPill: View {
+    @EnvironmentObject private var theme: ThemeStore
+    let title: String
+    let systemImage: String?
+    let selected: Bool
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 5) {
+                if let systemImage { Image(systemName: systemImage) }
+                Text(title).lineLimit(1)
+            }
+            .font(.system(size: 12, weight: .semibold, design: .rounded))
+            .foregroundStyle(selected ? theme.palette.text : theme.palette.secondaryText)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .background(selected ? theme.palette.accent.opacity(0.26) : theme.palette.surface, in: Capsule())
+            .overlay(Capsule().stroke(selected ? theme.palette.accent.opacity(0.45) : theme.palette.border, lineWidth: 0.7))
         }
+        .buttonStyle(.plain)
     }
 }
 
 // MARK: - Root
 
-struct PerlogRootView: View {
-    @EnvironmentObject private var theme: ThemeStore
+struct RootView: View {
+    @StateObject private var theme = ThemeStore()
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
     var body: some View {
         TabView {
-            TimelineView().tabItem { Label("Timeline", systemImage: "clock") }
-            MemoriesView().tabItem { Label("Memories", systemImage: "sparkles") }
-            SummaryView().tabItem { Label("Summary", systemImage: "chart.xyaxis.line") }
-            MeView().tabItem { Label("Me", systemImage: "person.crop.circle") }
+            TimelineView()
+                .tabItem { Label("Timeline", systemImage: "clock") }
+            MemoriesView()
+                .tabItem { Label("Memories", systemImage: "sparkles") }
+            SummaryView()
+                .tabItem { Label("Summary", systemImage: "chart.xyaxis.line") }
+            MeView()
+                .tabItem { Label("Me", systemImage: "person.crop.circle") }
         }
+        .environmentObject(theme)
         .tint(theme.palette.accent)
         .preferredColorScheme(theme.palette.isDark ? .dark : .light)
+        .animation(reduceMotion ? nil : .easeInOut(duration: 0.22), value: theme.name)
     }
 }
 
@@ -370,254 +453,277 @@ struct TimelineView: View {
     @EnvironmentObject private var theme: ThemeStore
     @Environment(\.modelContext) private var context
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @Query(sort: [SortDescriptor<LogEntry>(\.occurredAt, order: .reverse)]) private var entries: [LogEntry]
+    @Query(sort: [SortDescriptor<LogEntry>(\.date, order: .reverse)]) private var entries: [LogEntry]
 
     @State private var searchText = ""
     @State private var selectedType: LogType?
     @State private var showingEditor = false
     @State private var editingEntry: LogEntry?
     @State private var showingFilter = false
-    @State private var showingDeleteConfirmation = false
-    @State private var pendingDelete: LogEntry?
-    @State private var showingUndo = false
-    @State private var undoEntry: LogEntry?
+    @State private var showingThemeStudio = false
+    @State private var deletedEntry: LogEntry?
+    @State private var showingDeleteAlert = false
+    @State private var showingQuickAdd = false
 
-    private var shown: [LogEntry] {
+    private var filteredEntries: [LogEntry] {
         entries.filter { entry in
-            let typeMatches = selectedType == nil || entry.kind == selectedType
-            let searchable = [entry.title, entry.bodyText, entry.location ?? "", entry.tags.joined(separator: " "), entry.urlString ?? ""].joined(separator: " ")
-            return typeMatches && (searchText.isEmpty || searchable.localizedCaseInsensitiveContains(searchText))
+            let matchesType = selectedType == nil || entry.type == selectedType
+            guard !searchText.isEmpty else { return matchesType }
+            let haystack = [entry.title, entry.bodyText, entry.location ?? "", entry.tags.joined(separator: " ")].joined(separator: " ")
+            return matchesType && haystack.localizedCaseInsensitiveContains(searchText)
         }
     }
 
-    private var days: [Date] {
-        Array(Set(shown.map { Calendar.current.startOfDay(for: $0.occurredAt) })).sorted(by: >)
+    private var groupedDays: [Date] {
+        Array(Set(filteredEntries.map { Calendar.current.startOfDay(for: $0.date) })).sorted(by: >)
     }
 
     var body: some View {
         NavigationStack {
-            ZStack(alignment: .bottomTrailing) {
-                AmbientBackground()
-                ScrollView {
-                    LazyVStack(alignment: .leading, spacing: 18) {
-                        header
-                        searchBar
-                        typeChips
-                        if shown.isEmpty { emptyState }
-                        ForEach(days, id: \.self) { day in
-                            daySection(day)
+            GeometryReader { proxy in
+                ZStack(alignment: .bottomTrailing) {
+                    PerlogBackground()
+
+                    ScrollView(.vertical) {
+                        LazyVStack(alignment: .leading, spacing: 15) {
+                            topBar
+                            dayHeader
+                            searchBar
+                            quickContext
+                            filterStrip
+
+                            if filteredEntries.isEmpty {
+                                emptyState
+                            } else {
+                                ForEach(groupedDays, id: \.self) { day in
+                                    daySection(day)
+                                }
+                            }
                         }
+                        .frame(maxWidth: min(proxy.size.width, 760))
+                        .frame(maxWidth: .infinity)
+                        .padding(.horizontal, horizontalPadding(for: proxy.size.width))
+                        .padding(.top, 10)
+                        .padding(.bottom, 112)
                     }
-                    .padding(.horizontal, 16)
-                    .padding(.top, 12)
-                    .padding(.bottom, 104)
+                    .scrollIndicators(.hidden)
+
+                    quickAddButton
                 }
-                quickAddButton
             }
             .toolbar(.hidden, for: .navigationBar)
             .sheet(isPresented: $showingEditor) {
                 EntryEditorView(entry: editingEntry)
+                    .environmentObject(theme)
+            }
+            .sheet(isPresented: $showingQuickAdd) {
+                QuickAddView { type in
+                    showingQuickAdd = false
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+                        editingEntry = nil
+                        selectedType = type
+                        showingEditor = true
+                    }
+                }
+                .environmentObject(theme)
+                .presentationDetents([.height(300), .medium])
             }
             .sheet(isPresented: $showingFilter) {
                 FilterView(selection: $selectedType)
+                    .environmentObject(theme)
+                    .presentationDetents([.medium])
             }
-            .confirmationDialog("Delete this Perlog?", isPresented: $showingDeleteConfirmation, titleVisibility: .visible) {
-                Button("Delete", role: .destructive) { performDelete() }
-                Button("Cancel", role: .cancel) { pendingDelete = nil }
-            } message: {
-                Text("The record will be removed. You can undo immediately afterward.")
+            .sheet(isPresented: $showingThemeStudio) {
+                ThemeStudioView()
+                    .environmentObject(theme)
+            }
+            .alert("Delete this record?", isPresented: $showingDeleteAlert) {
+                Button("Delete", role: .destructive) {
+                    if let deletedEntry { performDelete(deletedEntry) }
+                }
+                Button("Cancel", role: .cancel) { }
             }
             .overlay(alignment: .bottom) {
-                if showingUndo {
-                    undoBanner
-                        .transition(.move(edge: .bottom).combined(with: .opacity))
-                        .padding(.bottom, 12)
+                if let deletedEntry {
+                    UndoBanner {
+                        context.insert(deletedEntry)
+                        self.deletedEntry = nil
+                        try? context.save()
+                    } onDismiss: {
+                        self.deletedEntry = nil
+                    }
+                    .padding(.bottom, 82)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
                 }
             }
         }
-        .task { SeedEntries.seedIfNeeded(context: context, existingCount: entries.count) }
-        .animation(reduceMotion ? nil : .snappy, value: showingUndo)
     }
 
-    private var header: some View {
-        HStack(alignment: .top) {
-            VStack(alignment: .leading, spacing: 5) {
-                Text(greeting).font(.system(size: 32, weight: .bold, design: .rounded))
-                Text(Date.now.formatted(.dateTime.weekday(.wide).month(.wide).day()))
-                    .font(.subheadline)
-                    .foregroundStyle(theme.palette.secondary)
-                Text("Your life, logged.")
-                    .font(.caption)
-                    .foregroundStyle(theme.palette.secondary)
-            }
-            Spacer(minLength: 12)
+    private func horizontalPadding(for width: CGFloat) -> CGFloat {
+        width < 360 ? 12 : 18
+    }
+
+    private var topBar: some View {
+        HStack(spacing: 10) {
             HStack(spacing: 8) {
-                Button { showingFilter = true } label: {
-                    Image(systemName: "line.3.horizontal.decrease.circle")
-                        .font(.title3)
-                        .frame(width: 42, height: 42)
-                }
-                .accessibilityLabel("Filter records")
-                Button { editingEntry = nil; showingEditor = true } label: {
-                    Image(systemName: "square.and.pencil")
-                        .font(.title3)
-                        .frame(width: 42, height: 42)
-                }
-                .accessibilityLabel("New Perlog")
+                Text("Perlog")
+                    .font(.system(size: 15, weight: .bold, design: .rounded))
+                Spacer(minLength: 0)
+                Button { } label: { Image(systemName: "magnifyingglass") }
+                    .accessibilityLabel("Search")
+                Button { showingThemeStudio = true } label: { Image(systemName: "ellipsis") }
+                    .accessibilityLabel("Open Theme Studio")
             }
+            .foregroundStyle(theme.palette.text)
+            .padding(.horizontal, 12)
+            .frame(height: 38)
             .background(.ultraThinMaterial, in: Capsule())
+            .overlay(Capsule().stroke(theme.palette.border, lineWidth: 0.8))
         }
+    }
+
+    private var dayHeader: some View {
+        HStack(alignment: .bottom) {
+            VStack(alignment: .leading, spacing: 3) {
+                Text(Date.now.formatted(.dateTime.weekday(.wide).month(.wide).day()))
+                    .font(.system(size: 24, weight: .medium, design: .rounded))
+                    .foregroundStyle(theme.palette.text)
+                HStack(spacing: 5) {
+                    Text("☀️")
+                    Text("Happy")
+                    Text("•")
+                    Text("\(entries.count) records")
+                }
+                .font(.system(size: 11, weight: .medium))
+                .foregroundStyle(theme.palette.secondaryText)
+            }
+            Spacer()
+        }
+        .padding(.top, 5)
     }
 
     private var searchBar: some View {
-        HStack(spacing: 10) {
+        HStack(spacing: 9) {
             Image(systemName: "magnifyingglass")
-            TextField("Search your life…", text: $searchText)
-                .textInputAutocapitalization(.sentences)
-                .autocorrectionDisabled(false)
+                .foregroundStyle(theme.palette.secondaryText)
+            TextField("Search your log", text: $searchText)
+                .textInputAutocapitalization(.never)
+                .foregroundStyle(theme.palette.text)
             if !searchText.isEmpty {
                 Button { searchText = "" } label: { Image(systemName: "xmark.circle.fill") }
-                    .accessibilityLabel("Clear search")
+                    .foregroundStyle(theme.palette.secondaryText)
             }
         }
-        .foregroundStyle(theme.palette.secondary)
-        .padding(.horizontal, 15)
-        .frame(minHeight: 48)
-        .background(.ultraThinMaterial, in: Capsule())
-        .overlay(Capsule().stroke(.white.opacity(0.35), lineWidth: 1))
+        .font(.system(size: 14))
+        .padding(.horizontal, 14)
+        .frame(height: 42)
+        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 15, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 15, style: .continuous).stroke(theme.palette.border, lineWidth: 0.8))
     }
 
-    private var typeChips: some View {
+    private var quickContext: some View {
+        GlassCard {
+            HStack(spacing: 10) {
+                Image(systemName: "wand.and.stars")
+                    .foregroundStyle(theme.palette.accent)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Your personal log")
+                        .font(.system(size: 13, weight: .semibold, design: .rounded))
+                    Text("Capture anything worth remembering.")
+                        .font(.system(size: 11))
+                        .foregroundStyle(theme.palette.secondaryText)
+                }
+                Spacer()
+                Button("Theme") { showingThemeStudio = true }
+                    .font(.system(size: 11, weight: .bold))
+                    .foregroundStyle(theme.palette.accent)
+            }
+        }
+    }
+
+    private var filterStrip: some View {
         ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 8) {
-                chip(nil, "Everything", "square.grid.2x2")
-                ForEach(LogType.allCases) { type in chip(type, type.title, type.icon) }
+            HStack(spacing: 7) {
+                GlassPill(title: "Everything", systemImage: "square.grid.2x2.fill", selected: selectedType == nil) {
+                    selectedType = nil
+                }
+                ForEach(LogType.allCases) { type in
+                    GlassPill(title: type.title, systemImage: type.icon, selected: selectedType == type) {
+                        selectedType = selectedType == type ? nil : type
+                    }
+                }
             }
         }
-        .scrollIndicators(.hidden)
-    }
-
-    private func chip(_ type: LogType?, _ title: String, _ icon: String) -> some View {
-        let selected = selectedType == type
-        return Button {
-            selectedType = selected ? nil : type
-        } label: {
-            Label(title, systemImage: icon)
-                .font(.caption.weight(.semibold))
-                .padding(.horizontal, 12)
-                .padding(.vertical, 9)
-                .background(selected ? theme.palette.accent.opacity(0.20) : Color.primary.opacity(0.055), in: Capsule())
-                .overlay(Capsule().stroke(selected ? theme.palette.accent.opacity(0.42) : .white.opacity(0.20), lineWidth: 1))
-        }
-        .buttonStyle(.plain)
     }
 
     private func daySection(_ day: Date) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text(day.formatted(.dateTime.weekday(.wide).month(.wide).day()))
-                .font(.headline)
-                .foregroundStyle(theme.palette.primary)
-                .padding(.leading, 3)
-            ForEach(shown.filter { Calendar.current.isDate($0.occurredAt, inSameDayAs: day) }) { entry in
-                EntryCard(entry: entry, onEdit: {
-                    editingEntry = entry
-                    showingEditor = true
-                }, onDelete: {
-                    pendingDelete = entry
-                    showingDeleteConfirmation = true
-                })
+        VStack(alignment: .leading, spacing: 9) {
+            Text(day.formatted(.dateTime.weekday(.wide).month(.abbreviated).day()))
+                .font(.system(size: 12, weight: .bold, design: .rounded))
+                .foregroundStyle(theme.palette.secondaryText)
+                .padding(.horizontal, 3)
+
+            ForEach(filteredEntries.filter { Calendar.current.isDate($0.date, inSameDayAs: day) }) { entry in
+                EntryCard(entry: entry, onEdit: { edit(entry) }, onDelete: { askDelete(entry) })
             }
         }
     }
 
     private var emptyState: some View {
-        GlassSurface {
+        GlassCard {
             VStack(alignment: .leading, spacing: 10) {
-                Image(systemName: "book.closed")
-                    .font(.largeTitle)
+                Image(systemName: selectedType == nil ? "plus.circle" : selectedType!.icon)
+                    .font(.system(size: 30, weight: .semibold))
                     .foregroundStyle(theme.palette.accent)
-                Text(searchText.isEmpty ? "Your personal log is ready." : "No matching Perlogs.")
-                    .font(.headline)
-                Text(searchText.isEmpty ? "Capture a thought, moment, photo, place, mood, activity, or anything else worth remembering." : "Try another search or clear the current filter.")
-                    .foregroundStyle(theme.palette.secondary)
+                Text(selectedType == nil ? "Your personal log is ready." : "No \(selectedType!.title.lowercased()) records yet.")
+                    .font(.system(size: 17, weight: .bold, design: .rounded))
+                    .foregroundStyle(theme.palette.text)
+                Text("Capture a thought, photo, place, mood, activity, task, or anything else worth keeping.")
+                    .font(.system(size: 13))
+                    .foregroundStyle(theme.palette.secondaryText)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
 
     private var quickAddButton: some View {
-        Button { editingEntry = nil; showingEditor = true } label: {
-            Image(systemName: "plus")
-                .font(.title2.bold())
-                .foregroundStyle(theme.palette.primary)
-                .frame(width: 60, height: 60)
-                .background(.ultraThinMaterial, in: Circle())
-                .overlay(Circle().stroke(.white.opacity(0.58), lineWidth: 1))
-                .shadow(color: .black.opacity(0.20), radius: 18, y: 8)
+        Button { showingQuickAdd = true } label: {
+            HStack(spacing: 8) {
+                Image(systemName: "plus")
+                Text("Log")
+            }
+            .font(.system(size: 15, weight: .bold, design: .rounded))
+            .foregroundStyle(.white)
+            .padding(.horizontal, 20)
+            .frame(height: 52)
+            .background(theme.palette.accent, in: Capsule())
+            .overlay(Capsule().stroke(.white.opacity(0.30), lineWidth: 0.8))
+            .shadow(color: theme.palette.accent.opacity(0.30), radius: 18, y: 7)
         }
-        .accessibilityLabel("Add a Perlog")
-        .padding(18)
+        .accessibilityLabel("Add record")
+        .padding(.trailing, 18)
+        .padding(.bottom, 18)
     }
 
-    private var undoBanner: some View {
-        HStack {
-            Text("Perlog deleted")
-                .font(.subheadline.weight(.semibold))
-            Spacer()
-            Button("Undo") { undoDelete() }
-                .font(.subheadline.bold())
-        }
-        .padding(.horizontal, 16)
-        .frame(minHeight: 50)
-        .background(.ultraThinMaterial, in: Capsule())
-        .overlay(Capsule().stroke(.white.opacity(0.45), lineWidth: 1))
-        .shadow(radius: 18, y: 8)
-        .padding(.horizontal, 20)
+    private func edit(_ entry: LogEntry?) {
+        editingEntry = entry
+        showingEditor = true
     }
 
-    private var greeting: String {
-        let hour = Calendar.current.component(.hour, from: .now)
-        return hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening"
+    private func askDelete(_ entry: LogEntry) {
+        editingEntry = nil
+        deletedEntry = entry
+        showingDeleteAlert = true
     }
 
-    private func performDelete() {
-        guard let entry = pendingDelete else { return }
-        undoEntry = LogEntry(
-            kind: entry.kind,
-            occurredAt: entry.occurredAt,
-            title: entry.title,
-            bodyText: entry.bodyText,
-            mood: entry.mood,
-            tags: entry.tags,
-            location: entry.location,
-            value: entry.value,
-            unit: entry.unit,
-            done: entry.done,
-            photos: entry.photos,
-            urlString: entry.urlString,
-            reminderDate: entry.reminderDate,
-            dividerLabel: entry.dividerLabel
-        )
+    private func performDelete(_ entry: LogEntry) {
         context.delete(entry)
         try? context.save()
-        pendingDelete = nil
-        showingUndo = true
-        DispatchQueue.main.asyncAfter(deadline: .now() + 5) {
-            showingUndo = false
-            undoEntry = nil
-        }
-    }
-
-    private func undoDelete() {
-        guard let restored = undoEntry else { return }
-        context.insert(restored)
-        try? context.save()
-        showingUndo = false
-        undoEntry = nil
+        withAnimation(reduceMotion ? nil : .spring(response: 0.35, dampingFraction: 0.9)) { }
     }
 }
 
-// MARK: - Entry Card
+// MARK: - Entry Card / Detail
 
 struct EntryCard: View {
     @EnvironmentObject private var theme: ThemeStore
@@ -627,42 +733,192 @@ struct EntryCard: View {
 
     var body: some View {
         Button(action: onEdit) {
-            GlassSurface {
-                HStack(alignment: .top, spacing: 12) {
-                    Image(systemName: entry.kind.icon)
-                        .font(.headline)
-                        .foregroundStyle(theme.palette.accent)
-                        .frame(width: 26, height: 26)
-                        .accessibilityHidden(true)
-                    VStack(alignment: .leading, spacing: 7) {
-                        HStack(alignment: .firstTextBaseline) {
-                            Text(entry.kind.title).font(.subheadline.weight(.bold))
-                            Spacer(minLength: 8)
-                            Text(entry.occurredAt.formatted(date: .omitted, time: .shortened))
-                                .font(.caption)
-                                .foregroundStyle(theme.palette.secondary)
+            GlassCard {
+                VStack(alignment: .leading, spacing: 10) {
+                    HStack(alignment: .center, spacing: 10) {
+                        ZStack {
+                            Circle()
+                                .fill(entry.type.accent.opacity(0.18))
+                            Image(systemName: entry.type.icon)
+                                .font(.system(size: 13, weight: .bold))
+                                .foregroundStyle(entry.type.accent)
                         }
-                        if !entry.title.isEmpty { Text(entry.title).font(.headline) }
-                        if let mood = entry.mood { Text("\(mood.emoji) \(mood.rawValue.capitalized)").font(.caption).foregroundStyle(theme.palette.secondary) }
-                        if !entry.bodyText.isEmpty { Text(entry.bodyText).lineLimit(7).frame(maxWidth: .infinity, alignment: .leading) }
-                        if let value = entry.value { Text("\(value.formatted()) \(entry.unit ?? "")").font(.title3.bold()) }
-                        if let location = entry.location, !location.isEmpty { Label(location, systemImage: "mappin").font(.caption).foregroundStyle(theme.palette.secondary) }
-                        if !entry.tags.isEmpty { Text(entry.tags.map { "#\($0)" }.joined(separator: "  ")).font(.caption).foregroundStyle(theme.palette.accent) }
-                        if !entry.photos.isEmpty { PhotoStrip(data: entry.photos, height: 82) }
-                        if entry.done { Label("Completed", systemImage: "checkmark.circle.fill").font(.caption).foregroundStyle(.green) }
+                        .frame(width: 30, height: 30)
+
+                        Text(entry.type.title)
+                            .font(.system(size: 12, weight: .bold, design: .rounded))
+                            .foregroundStyle(theme.palette.text)
+                        Spacer()
+                        Text(entry.date.formatted(date: .omitted, time: .shortened))
+                            .font(.system(size: 10, weight: .medium))
+                            .foregroundStyle(theme.palette.secondaryText)
+                        Image(systemName: "ellipsis")
+                            .foregroundStyle(theme.palette.secondaryText)
+                    }
+
+                    if !entry.title.isEmpty {
+                        Text(entry.title)
+                            .font(.system(size: 16, weight: .semibold, design: .rounded))
+                            .foregroundStyle(theme.palette.text)
+                    }
+
+                    if let mood = entry.mood {
+                        Text("\(mood.emoji)  \(mood.rawValue.capitalized)")
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundStyle(theme.palette.secondaryText)
+                    }
+
+                    if !entry.bodyText.isEmpty {
+                        Text(entry.bodyText)
+                            .font(.system(size: 13))
+                            .foregroundStyle(theme.palette.text.opacity(0.92))
+                            .lineLimit(5)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+
+                    if !entry.photos.isEmpty {
+                        PhotoStrip(data: entry.photos, height: 86)
+                    }
+
+                    HStack(spacing: 7) {
+                        if let value = entry.value {
+                            Label("\(value.formatted()) \(entry.unit ?? "")", systemImage: entry.type.icon)
+                        }
+                        if let location = entry.location, !location.isEmpty {
+                            Label(location, systemImage: "mappin")
+                        }
+                        if entry.done {
+                            Label("Done", systemImage: "checkmark.circle.fill")
+                        }
+                        Spacer(minLength: 0)
+                    }
+                    .font(.system(size: 10, weight: .medium))
+                    .foregroundStyle(theme.palette.secondaryText)
+
+                    if !entry.tags.isEmpty {
+                        Text(entry.tags.map { "#\($0)" }.joined(separator: "   "))
+                            .font(.system(size: 10, weight: .semibold))
+                            .foregroundStyle(theme.palette.accent)
                     }
                 }
             }
         }
         .buttonStyle(.plain)
         .contextMenu {
-            Button("Edit", systemImage: "pencil", action: onEdit)
-            Button("Delete", systemImage: "trash", role: .destructive, action: onDelete)
+            Button { onEdit() } label: { Label("Edit", systemImage: "pencil") }
+            Button(role: .destructive) { onDelete() } label: { Label("Delete", systemImage: "trash") }
         }
     }
 }
 
-// MARK: - Editor
+struct RecordDetailView: View {
+    @EnvironmentObject private var theme: ThemeStore
+    @Environment(\.dismiss) private var dismiss
+    let entry: LogEntry
+    let onEdit: () -> Void
+    let onDelete: () -> Void
+
+    var body: some View {
+        NavigationStack {
+            ZStack {
+                PerlogBackground()
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 14) {
+                        if !entry.photos.isEmpty {
+                            PhotoStrip(data: entry.photos, height: 240, cornerRadius: 20)
+                        }
+
+                        GlassCard {
+                            VStack(alignment: .leading, spacing: 12) {
+                                HStack {
+                                    Label(entry.type.title, systemImage: entry.type.icon)
+                                        .font(.system(size: 13, weight: .bold, design: .rounded))
+                                        .foregroundStyle(entry.type.accent)
+                                    Spacer()
+                                    Text(entry.date.formatted(date: .abbreviated, time: .shortened))
+                                        .font(.caption)
+                                        .foregroundStyle(theme.palette.secondaryText)
+                                }
+                                if !entry.title.isEmpty { Text(entry.title).font(.title2.bold()) }
+                                if !entry.bodyText.isEmpty { Text(entry.bodyText).font(.body) }
+                                if let mood = entry.mood { Text("\(mood.emoji)  \(mood.rawValue.capitalized)") }
+                                if let location = entry.location { Label(location, systemImage: "mappin.circle.fill") }
+                                if let value = entry.value { Text("\(value.formatted()) \(entry.unit ?? "")").font(.title3.bold()) }
+                                if !entry.tags.isEmpty { Text(entry.tags.map { "#\($0)" }.joined(separator: "  ")).foregroundStyle(theme.palette.accent) }
+                            }
+                        }
+
+                        HStack(spacing: 10) {
+                            Button { onEdit() } label: {
+                                Label("Edit", systemImage: "pencil")
+                                    .frame(maxWidth: .infinity)
+                            }
+                            .buttonStyle(PerlogSecondaryButtonStyle())
+
+                            Button(role: .destructive) { onDelete() } label: {
+                                Label("Delete", systemImage: "trash")
+                                    .frame(maxWidth: .infinity)
+                            }
+                            .buttonStyle(PerlogSecondaryButtonStyle())
+                        }
+                    }
+                    .padding(18)
+                }
+            }
+            .navigationTitle("Record")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button("Done") { dismiss() } }
+            }
+        }
+    }
+}
+
+// MARK: - Add / Edit
+
+struct QuickAddView: View {
+    @EnvironmentObject private var theme: ThemeStore
+    let onSelect: (LogType) -> Void
+
+    var body: some View {
+        NavigationStack {
+            ZStack {
+                PerlogBackground()
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 14) {
+                        Text("New record")
+                            .font(.title2.bold())
+                            .padding(.horizontal, 18)
+
+                        LazyVGrid(columns: [GridItem(.adaptive(minimum: 90), spacing: 10)], spacing: 10) {
+                            ForEach(LogType.allCases) { type in
+                                Button { onSelect(type) } label: {
+                                    VStack(spacing: 7) {
+                                        Image(systemName: type.icon)
+                                            .font(.title3.bold())
+                                            .foregroundStyle(type.accent)
+                                        Text(type.title)
+                                            .font(.caption.bold())
+                                            .foregroundStyle(theme.palette.text)
+                                            .lineLimit(1)
+                                    }
+                                    .frame(maxWidth: .infinity)
+                                    .frame(height: 70)
+                                    .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                                    .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(theme.palette.border, lineWidth: 0.7))
+                                }
+                                .buttonStyle(.plain)
+                            }
+                        }
+                        .padding(.horizontal, 18)
+                    }
+                    .padding(.vertical, 14)
+                }
+            }
+            .toolbar(.hidden, for: .navigationBar)
+        }
+    }
+}
 
 struct EntryEditorView: View {
     @EnvironmentObject private var theme: ThemeStore
@@ -671,7 +927,8 @@ struct EntryEditorView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     let entry: LogEntry?
-    @State private var type: LogType = .journal
+
+    @State private var type: LogType
     @State private var title = ""
     @State private var bodyText = ""
     @State private var date = Date.now
@@ -681,35 +938,120 @@ struct EntryEditorView: View {
     @State private var valueText = ""
     @State private var unit = ""
     @State private var done = false
-    @State private var urlString = ""
-    @State private var reminderEnabled = false
-    @State private var reminderDate = Date.now.addingTimeInterval(3600)
-    @State private var dividerLabel = ""
     @State private var photoItems: [PhotosPickerItem] = []
     @State private var photos: [Data] = []
-    @State private var loaded = false
+    @State private var initialized = false
+
+    init(entry: LogEntry?) {
+        self.entry = entry
+        _type = State(initialValue: entry?.type ?? .journal)
+    }
 
     var body: some View {
         NavigationStack {
-            Form {
-                Section("Record") {
-                    Picker("Type", selection: $type) {
-                        ForEach(LogType.allCases) { item in Text(item.title).tag(item) }
+            ZStack {
+                PerlogBackground()
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 14) {
+                        typeSelector
+                        contentCard
+                        metadataCard
+                        photoCard
                     }
-                    TextField("Title", text: $title)
-                    TextEditor(text: $bodyText).frame(minHeight: 135)
+                    .padding(.horizontal, 16)
+                    .padding(.top, 12)
+                    .padding(.bottom, 30)
+                }
+                .scrollIndicators(.hidden)
+            }
+            .navigationTitle(entry == nil ? "New Record" : "Edit Record")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Save") { save() }
+                        .fontWeight(.bold)
+                }
+            }
+            .task {
+                guard !initialized else { return }
+                initialized = true
+                loadEntry()
+            }
+            .onChange(of: photoItems) { _, newItems in
+                Task {
+                    var loaded: [Data] = []
+                    for item in newItems {
+                        if let data = try? await item.loadTransferable(type: Data.self) {
+                            loaded.append(data)
+                        }
+                    }
+                    await MainActor.run { photos = loaded }
+                }
+            }
+        }
+        .presentationBackground(.clear)
+        .presentationDragIndicator(.visible)
+    }
+
+    private var typeSelector: some View {
+        VStack(alignment: .leading, spacing: 9) {
+            Text("Record type")
+                .font(.caption.bold())
+                .foregroundStyle(theme.palette.secondaryText)
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    ForEach(LogType.allCases) { option in
+                        GlassPill(title: option.title, systemImage: option.icon, selected: type == option) {
+                            withAnimation(reduceMotion ? nil : .easeOut(duration: 0.15)) { type = option }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private var contentCard: some View {
+        GlassCard {
+            VStack(alignment: .leading, spacing: 13) {
+                TextField("Title", text: $title)
+                    .font(.headline)
+                    .foregroundStyle(theme.palette.text)
+                TextEditor(text: $bodyText)
+                    .frame(minHeight: 145)
+                    .scrollContentBackground(.hidden)
+                    .foregroundStyle(theme.palette.text)
+                    .overlay(alignment: .topLeading) {
+                        if bodyText.isEmpty {
+                            Text(type == .todo ? "What needs to be done?" : "Write anything worth remembering…")
+                                .foregroundStyle(theme.palette.secondaryText.opacity(0.75))
+                                .allowsHitTesting(false)
+                                .padding(.top, 8)
+                        }
+                    }
+            }
+        }
+    }
+
+    private var metadataCard: some View {
+        GlassCard {
+            VStack(alignment: .leading, spacing: 14) {
+                HStack {
+                    Label("When", systemImage: "calendar")
+                    Spacer()
+                    DatePicker("", selection: $date)
+                        .labelsHidden()
                 }
 
-                if type == .mood || type == .journal {
-                    Section("Mood") {
+                if type == .mood || mood != nil {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Mood").font(.caption.bold()).foregroundStyle(theme.palette.secondaryText)
                         ScrollView(.horizontal, showsIndicators: false) {
-                            HStack(spacing: 8) {
-                                ForEach(Mood.allCases) { item in
-                                    Button("\(item.emoji) \(item.rawValue.capitalized)") {
-                                        mood = mood == item ? nil : item
+                            HStack(spacing: 7) {
+                                ForEach(Mood.allCases) { option in
+                                    GlassPill(title: "\(option.emoji) \(option.rawValue.capitalized)", systemImage: nil, selected: mood == option) {
+                                        mood = mood == option ? nil : option
                                     }
-                                    .buttonStyle(.bordered)
-                                    .tint(mood == item ? theme.palette.accent : .secondary)
                                 }
                             }
                         }
@@ -717,138 +1059,97 @@ struct EntryEditorView: View {
                 }
 
                 if [.weight, .steps, .sleep].contains(type) {
-                    Section("Value") {
-                        TextField("Value", text: $valueText).keyboardType(.decimalPad)
+                    HStack(spacing: 9) {
+                        TextField("Value", text: $valueText)
+                            .keyboardType(.decimalPad)
                         TextField("Unit", text: $unit)
+                            .frame(width: 90)
                     }
+                    .textFieldStyle(.roundedBorder)
                 }
 
                 if type == .todo {
-                    Section { Toggle("Completed", isOn: $done) }
+                    Toggle("Completed", isOn: $done)
                 }
 
-                if type == .divider {
-                    Section("Divider") { TextField("Label", text: $dividerLabel) }
-                }
+                TextField("Location (optional)", text: $location)
+                    .textFieldStyle(.roundedBorder)
 
-                Section("Photos") {
-                    PhotosPicker(selection: $photoItems, maxSelectionCount: 24, matching: .images) {
-                        Label("Add photos", systemImage: "photo.on.rectangle")
-                    }
-                    if !photos.isEmpty { PhotoStrip(data: photos, height: 95) }
-                }
-
-                Section("When") { DatePicker("Date & time", selection: $date) }
-
-                Section("Place & tags") {
-                    TextField("Location", text: $location)
-                    TextField("Tags, comma separated", text: $tagsText)
-                }
-
-                Section("Link") {
-                    TextField("https://…", text: $urlString)
-                        .keyboardType(.URL)
-                        .textInputAutocapitalization(.never)
-                        .autocorrectionDisabled()
-                }
-
-                Section("Reminder") {
-                    Toggle("Local reminder", isOn: $reminderEnabled)
-                    if reminderEnabled { DatePicker("Remind me", selection: $reminderDate, in: Date.now...) }
-                }
+                TextField("Tags, comma separated", text: $tagsText)
+                    .textFieldStyle(.roundedBorder)
             }
-            .scrollContentBackground(.hidden)
-            .background(theme.palette.background)
-            .tint(theme.palette.accent)
-            .navigationTitle(entry == nil ? "New Perlog" : "Edit Perlog")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
-                ToolbarItem(placement: .confirmationAction) { Button("Save", action: save).fontWeight(.semibold) }
-            }
-            .task {
-                if !loaded { loadEntry(); loaded = true }
-            }
-            .onChange(of: photoItems) { _, newItems in
-                Task {
-                    var loadedData: [Data] = []
-                    for item in newItems {
-                        if let data = try? await item.loadTransferable(type: Data.self) { loadedData.append(data) }
-                    }
-                    await MainActor.run { photos = loadedData }
+        }
+    }
+
+    private var photoCard: some View {
+        GlassCard {
+            VStack(alignment: .leading, spacing: 10) {
+                PhotosPicker(selection: $photoItems, maxSelectionCount: 50, matching: .images) {
+                    Label("Add photos", systemImage: "photo.on.rectangle.angled")
+                        .font(.system(size: 14, weight: .bold))
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(PerlogSecondaryButtonStyle())
+
+                if !photos.isEmpty {
+                    PhotoStrip(data: photos, height: 90)
                 }
             }
         }
-        .presentationDetents([.large])
-        .presentationDragIndicator(.visible)
-        .presentationBackground(.ultraThinMaterial)
-        .animation(reduceMotion ? nil : .snappy, value: type)
     }
 
     private func loadEntry() {
         guard let entry else { return }
-        type = entry.kind
+        type = entry.type
         title = entry.title
         bodyText = entry.bodyText
-        date = entry.occurredAt
+        date = entry.date
         mood = entry.mood
         tagsText = entry.tags.joined(separator: ", ")
         location = entry.location ?? ""
-        valueText = entry.value.map { String(describing: $0) } ?? ""
+        valueText = entry.value.map { String($0) } ?? ""
         unit = entry.unit ?? ""
         done = entry.done
         photos = entry.photos
-        urlString = entry.urlString ?? ""
-        reminderEnabled = entry.reminderDate != nil
-        reminderDate = entry.reminderDate ?? Date.now.addingTimeInterval(3600)
-        dividerLabel = entry.dividerLabel ?? ""
     }
 
     private func save() {
-        let cleanTags = tagsText
+        let tags = tagsText
             .split(separator: ",")
             .map { String($0).trimmingCharacters(in: .whitespacesAndNewlines) }
             .filter { !$0.isEmpty }
-        let cleanLocation = location.trimmingCharacters(in: .whitespacesAndNewlines)
-        let cleanUnit = unit.trimmingCharacters(in: .whitespacesAndNewlines)
-        let cleanURL = urlString.trimmingCharacters(in: .whitespacesAndNewlines)
-        let numericValue = Double(valueText)
-        let reminder = reminderEnabled ? reminderDate : nil
+        let trimmedLocation = location.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedUnit = unit.trimmingCharacters(in: .whitespacesAndNewlines)
+        let number = Double(valueText.trimmingCharacters(in: .whitespacesAndNewlines))
 
         if let entry {
-            entry.kind = type
+            entry.type = type
             entry.title = title
             entry.bodyText = bodyText
-            entry.occurredAt = date
-            entry.updatedAt = .now
+            entry.date = date
             entry.mood = mood
-            entry.tags = cleanTags
-            entry.location = cleanLocation.isEmpty ? nil : cleanLocation
-            entry.value = numericValue
-            entry.unit = cleanUnit.isEmpty ? nil : cleanUnit
+            entry.tags = tags
+            entry.location = trimmedLocation.isEmpty ? nil : trimmedLocation
+            entry.value = number
+            entry.unit = trimmedUnit.isEmpty ? nil : trimmedUnit
             entry.done = done
             entry.photos = photos
-            entry.urlString = cleanURL.isEmpty ? nil : cleanURL
-            entry.reminderDate = reminder
-            entry.dividerLabel = dividerLabel.isEmpty ? nil : dividerLabel
         } else {
             context.insert(LogEntry(
-                kind: type,
-                occurredAt: date,
+                type: type,
+                date: date,
                 title: title,
                 bodyText: bodyText,
                 mood: mood,
-                tags: cleanTags,
-                location: cleanLocation.isEmpty ? nil : cleanLocation,
-                value: numericValue,
-                unit: cleanUnit.isEmpty ? nil : cleanUnit,
+                tags: tags,
+                location: trimmedLocation.isEmpty ? nil : trimmedLocation,
+                value: number,
+                unit: trimmedUnit.isEmpty ? nil : trimmedUnit,
                 done: done,
-                photos: photos,
-                urlString: cleanURL.isEmpty ? nil : cleanURL,
-                reminderDate: reminder,
-                dividerLabel: dividerLabel.isEmpty ? nil : dividerLabel
+                photos: photos
             ))
         }
+
         try? context.save()
         dismiss()
     }
@@ -856,8 +1157,9 @@ struct EntryEditorView: View {
 
 struct PhotoStrip: View {
     let data: [Data]
-    var height: CGFloat
-    init(data: [Data], height: CGFloat = 85) { self.data = data; self.height = height }
+    var height: CGFloat = 90
+    var cornerRadius: CGFloat = 15
+
     var body: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 9) {
@@ -867,32 +1169,66 @@ struct PhotoStrip: View {
                             .resizable()
                             .scaledToFill()
                             .frame(width: height * 1.28, height: height)
-                            .clipShape(RoundedRectangle(cornerRadius: 15, style: .continuous))
+                            .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
                     }
                 }
             }
         }
-        .scrollIndicators(.hidden)
     }
 }
 
-// MARK: - Filter
+// MARK: - Filter / Undo
 
 struct FilterView: View {
+    @EnvironmentObject private var theme: ThemeStore
     @Environment(\.dismiss) private var dismiss
     @Binding var selection: LogType?
+
     var body: some View {
         NavigationStack {
             List {
-                Button("Everything") { selection = nil; dismiss() }
-                ForEach(LogType.allCases) { item in
-                    Button { selection = item; dismiss() } label: { Label(item.title, systemImage: item.icon) }
+                Button { selection = nil; dismiss() } label: {
+                    Label("Everything", systemImage: "square.grid.2x2.fill")
+                }
+                ForEach(LogType.allCases) { type in
+                    Button { selection = type; dismiss() } label: {
+                        Label(type.title, systemImage: type.icon)
+                    }
                 }
             }
+            .scrollContentBackground(.hidden)
+            .background(PerlogBackground())
             .navigationTitle("Filter")
-            .navigationBarTitleDisplayMode(.inline)
         }
-        .presentationDetents([.medium, .large])
+    }
+}
+
+struct UndoBanner: View {
+    @EnvironmentObject private var theme: ThemeStore
+    let onUndo: () -> Void
+    let onDismiss: () -> Void
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Image(systemName: "trash")
+            Text("Record deleted")
+                .font(.subheadline.weight(.semibold))
+            Spacer()
+            Button("Undo", action: onUndo)
+                .font(.subheadline.bold())
+                .foregroundStyle(theme.palette.accent)
+            Button(action: onDismiss) {
+                Image(systemName: "xmark")
+            }
+            .accessibilityLabel("Dismiss")
+        }
+        .foregroundStyle(theme.palette.text)
+        .padding(.horizontal, 16)
+        .frame(minHeight: 50)
+        .background(.ultraThinMaterial, in: Capsule())
+        .overlay(Capsule().stroke(theme.palette.border, lineWidth: 0.8))
+        .padding(.horizontal, 18)
+        .shadow(radius: 15)
     }
 }
 
@@ -900,36 +1236,39 @@ struct FilterView: View {
 
 struct MemoriesView: View {
     @EnvironmentObject private var theme: ThemeStore
-    @Query(sort: [SortDescriptor<LogEntry>(\.occurredAt, order: .reverse)]) private var entries: [LogEntry]
+    @Query(sort: [SortDescriptor<LogEntry>(\.date, order: .reverse)]) private var entries: [LogEntry]
 
-    private var past: [LogEntry] { entries.filter { !Calendar.current.isDate($0.occurredAt, inSameDayAs: .now) }.prefix(18).map { $0 } }
+    private var memoryEntries: [LogEntry] {
+        Array(entries.dropFirst(min(3, entries.count)).prefix(12))
+    }
 
     var body: some View {
         NavigationStack {
             ZStack {
-                AmbientBackground()
+                PerlogBackground()
                 ScrollView {
-                    LazyVStack(alignment: .leading, spacing: 16) {
-                        Text("Memories").font(.largeTitle.bold())
-                        Text("Rediscover moments from your personal log.").foregroundStyle(theme.palette.secondary)
-                        if past.isEmpty {
-                            GlassSurface { Text("Your memories will appear here as your personal log grows.").foregroundStyle(theme.palette.secondary) }
-                        } else {
-                            ForEach(past) { entry in
-                                GlassSurface {
-                                    VStack(alignment: .leading, spacing: 7) {
-                                        Text(entry.occurredAt.formatted(date: .long, time: .shortened)).font(.caption).foregroundStyle(theme.palette.secondary)
-                                        Text(entry.title.isEmpty ? entry.kind.title : entry.title).font(.headline)
-                                        if !entry.bodyText.isEmpty { Text(entry.bodyText).lineLimit(5) }
-                                    }
-                                    .frame(maxWidth: .infinity, alignment: .leading)
+                    VStack(alignment: .leading, spacing: 14) {
+                        pageTitle("Memories", subtitle: "Rediscover moments from your personal log.")
+                        if memoryEntries.isEmpty {
+                            GlassCard {
+                                VStack(alignment: .leading, spacing: 8) {
+                                    Image(systemName: "sparkles")
+                                        .foregroundStyle(theme.palette.accent)
+                                    Text("Your memories will appear here.").font(.headline)
+                                    Text("As your personal log grows, Perlog will surface older moments for rediscovery.")
+                                        .foregroundStyle(theme.palette.secondaryText)
                                 }
+                            }
+                        } else {
+                            ForEach(memoryEntries) { entry in
+                                EntryCard(entry: entry, onEdit: {}, onDelete: {})
                             }
                         }
                     }
                     .padding(18)
                     .padding(.bottom, 30)
                 }
+                .scrollIndicators(.hidden)
             }
             .toolbar(.hidden, for: .navigationBar)
         }
@@ -945,41 +1284,48 @@ struct SummaryView: View {
     var body: some View {
         NavigationStack {
             ZStack {
-                AmbientBackground()
+                PerlogBackground()
                 ScrollView {
-                    VStack(alignment: .leading, spacing: 16) {
-                        Text("Summary").font(.largeTitle.bold())
-                        Text("A view of the life you have logged.").foregroundStyle(theme.palette.secondary)
-                        LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 14) {
-                            stat("\(entries.count)", "Perlogs", "clock")
-                            stat("\(entries.filter { $0.kind == .journal }.count)", "Journal", "book.pages")
-                            stat("\(entries.filter { !$0.photos.isEmpty }.count)", "Photos", "photo")
-                            stat("\(entries.filter { $0.kind == .place }.count)", "Places", "mappin")
-                            stat("\(entries.filter { $0.mood != nil }.count)", "Mood", "face.smiling")
-                            stat("\(entries.filter { $0.kind == .todo }.count)", "To-Dos", "checklist")
-                            stat("\(entries.filter { $0.kind == .meal }.count)", "Meals", "fork.knife")
-                            stat("\(entries.filter { $0.kind == .music }.count)", "Music", "music.note")
+                    VStack(alignment: .leading, spacing: 14) {
+                        pageTitle("Summary", subtitle: "A view of the life you have logged.")
+
+                        LazyVGrid(columns: [GridItem(.flexible(), spacing: 10), GridItem(.flexible(), spacing: 10)], spacing: 10) {
+                            stat("\(entries.count)", "Records", "clock")
+                            stat("\(entries.filter { $0.type == .journal }.count)", "Journal", "book.closed.fill")
+                            stat("\(entries.filter { !$0.photos.isEmpty }.count)", "Photos", "photo.fill")
+                            stat("\(entries.filter { $0.type == .place }.count)", "Places", "mappin.circle.fill")
+                            stat("\(entries.filter { $0.mood != nil }.count)", "Mood", "face.smiling.fill")
+                            stat("\(entries.filter { $0.type == .todo }.count)", "To-Dos", "checklist")
                         }
-                        GlassSurface {
-                            VStack(alignment: .leading, spacing: 7) {
-                                Text("Private by design").font(.headline)
-                                Text("Your records are stored locally on this device. Perlog does not require an account or impose a record limit.").foregroundStyle(theme.palette.secondary)
+
+                        GlassCard {
+                            VStack(alignment: .leading, spacing: 8) {
+                                Text("Your history")
+                                    .font(.headline)
+                                Text("Perlog keeps the full record locally. There is no Perlog-imposed limit on the number of records or photos.")
+                                    .font(.subheadline)
+                                    .foregroundStyle(theme.palette.secondaryText)
                             }
                         }
                     }
                     .padding(18)
                 }
+                .scrollIndicators(.hidden)
             }
             .toolbar(.hidden, for: .navigationBar)
         }
     }
 
     private func stat(_ value: String, _ title: String, _ icon: String) -> some View {
-        GlassSurface {
+        GlassCard {
             VStack(alignment: .leading, spacing: 5) {
-                Image(systemName: icon).foregroundStyle(theme.palette.accent)
-                Text(value).font(.system(size: 28, weight: .bold, design: .rounded))
-                Text(title).font(.caption).foregroundStyle(theme.palette.secondary)
+                Image(systemName: icon)
+                    .foregroundStyle(theme.palette.accent)
+                Text(value)
+                    .font(.system(size: 27, weight: .bold, design: .rounded))
+                Text(title)
+                    .font(.caption)
+                    .foregroundStyle(theme.palette.secondaryText)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         }
@@ -991,34 +1337,61 @@ struct SummaryView: View {
 struct MeView: View {
     @EnvironmentObject private var theme: ThemeStore
     @State private var showingThemeStudio = false
+    @State private var showingAbout = false
 
     var body: some View {
         NavigationStack {
-            List {
-                Section {
-                    Text("Perlog").font(.largeTitle.bold())
-                    Text("Your life, logged.").foregroundStyle(.secondary)
-                }
-                Section("Appearance") {
-                    Button { showingThemeStudio = true } label: {
-                        Label("Theme Studio · \(theme.name)", systemImage: "circle.lefthalf.filled")
+            ZStack {
+                PerlogBackground()
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 14) {
+                        pageTitle("Perlog", subtitle: "Your life, logged.")
+
+                        GlassCard {
+                            VStack(alignment: .leading, spacing: 9) {
+                                Text("Personal Log")
+                                    .font(.system(size: 21, weight: .bold, design: .rounded))
+                                Text("Everything worth remembering, in one continuous record.")
+                                    .font(.subheadline)
+                                    .foregroundStyle(theme.palette.secondaryText)
+                            }
+                        }
+
+                        GlassCard {
+                            VStack(alignment: .leading, spacing: 8) {
+                                Button { showingThemeStudio = true } label: {
+                                    HStack {
+                                        Label("Theme Studio", systemImage: "circle.lefthalf.filled")
+                                        Spacer()
+                                        Text(theme.name.rawValue)
+                                            .foregroundStyle(theme.palette.secondaryText)
+                                        Image(systemName: "chevron.right")
+                                    }
+                                }
+                                .buttonStyle(.plain)
+                            }
+                        }
+
+                        GlassCard {
+                            VStack(alignment: .leading, spacing: 12) {
+                                Label("Local-first storage", systemImage: "internaldrive.fill")
+                                Label("No account required", systemImage: "person.crop.circle.badge.checkmark")
+                                Label("No ads or tracking", systemImage: "eye.slash.fill")
+                                Label("Fully free", systemImage: "gift.fill")
+                            }
+                            .font(.subheadline)
+                            .foregroundStyle(theme.palette.text)
+                        }
                     }
+                    .padding(18)
                 }
-                Section("Data & privacy") {
-                    Label("Local-first storage", systemImage: "internaldrive")
-                    Label("No account required", systemImage: "person.crop.circle.badge.checkmark")
-                    Label("No ads or tracking", systemImage: "eye.slash")
-                    Text("Import/export and optional iCloud synchronization can be added without making the core personal log dependent on an account.")
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
-                }
-                Section("About") {
-                    Text("Perlog is a personal log: a unified chronological record for thoughts, moods, photos, places, meals, measurements, music, shopping, tasks, links, and moments worth remembering.")
-                        .font(.footnote)
-                }
+                .scrollIndicators(.hidden)
             }
-            .navigationTitle("Me")
-            .sheet(isPresented: $showingThemeStudio) { ThemeStudioView() }
+            .toolbar(.hidden, for: .navigationBar)
+            .sheet(isPresented: $showingThemeStudio) {
+                ThemeStudioView()
+                    .environmentObject(theme)
+            }
         }
     }
 }
@@ -1026,142 +1399,200 @@ struct MeView: View {
 struct ThemeStudioView: View {
     @EnvironmentObject private var theme: ThemeStore
     @Environment(\.dismiss) private var dismiss
-    @Environment(\.accessibilityIncreaseContrast) private var increaseContrast
-    @State private var accentColor = Color.blue
-    @State private var backgroundColor = Color.white
-    @State private var glassColor = Color.white
-    @State private var primaryColor = Color.black
-    @State private var secondaryColor = Color.gray
-
-    private let names = ["Grey", "White", "Black", "Iridescent", "Custom"]
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         NavigationStack {
-            Form {
-                Section("Themes") {
-                    ForEach(names, id: \.self) { name in
-                        Button { theme.select(name); syncColors() } label: {
-                            HStack(spacing: 12) {
-                                Circle().fill(previewColor(name)).frame(width: 28, height: 28)
-                                VStack(alignment: .leading) { Text(name); Text(description(name)).font(.caption).foregroundStyle(.secondary) }
-                                Spacer()
-                                if theme.name == name { Image(systemName: "checkmark.circle.fill") }
-                            }
+            ZStack {
+                PerlogBackground()
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 15) {
+                        Text("Theme Studio")
+                            .font(.system(size: 27, weight: .bold, design: .rounded))
+                            .foregroundStyle(theme.palette.text)
+
+                        Text("Make Perlog feel like yours.")
+                            .font(.subheadline)
+                            .foregroundStyle(theme.palette.secondaryText)
+
+                        themeCards
+
+                        if theme.name == .iridescent {
+                            iridescentControls
                         }
-                    }
-                }
 
-                if theme.name == "Iridescent" {
-                    Section("Iridescent hue") {
-                        Slider(value: Binding(get: { theme.configuration.hue }, set: { theme.configuration.hue = $0 }), in: 0...360)
-                        HStack { Text("Base hue"); Spacer(); Text("\(Int(theme.configuration.hue))°") }
-                            .font(.caption)
-                        Button("Reset hue") { theme.configuration.hue = 215 }
-                    }
-                }
-
-                if theme.name == "Custom" {
-                    Section("Custom palette") {
-                        ColorPicker("Accent", selection: $accentColor, supportsOpacity: false)
-                            .onChange(of: accentColor) { _, color in theme.setColor(color, keyPath: \.accentHex) }
-                        ColorPicker("Background", selection: $backgroundColor, supportsOpacity: false)
-                            .onChange(of: backgroundColor) { _, color in theme.setColor(color, keyPath: \.backgroundHex) }
-                        ColorPicker("Glass tint", selection: $glassColor, supportsOpacity: false)
-                            .onChange(of: glassColor) { _, color in theme.setColor(color, keyPath: \.glassHex) }
-                        ColorPicker("Primary text", selection: $primaryColor, supportsOpacity: false)
-                            .onChange(of: primaryColor) { _, color in theme.setColor(color, keyPath: \.primaryHex) }
-                        ColorPicker("Secondary text", selection: $secondaryColor, supportsOpacity: false)
-                            .onChange(of: secondaryColor) { _, color in theme.setColor(color, keyPath: \.secondaryHex) }
-                        Text(increaseContrast ? "Higher contrast is enabled by the system." : "Choose readable text and surface combinations.")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                        Button("Restore defaults", role: .destructive) { theme.restoreDefaults(); syncColors() }
-                    }
-                }
-
-                Section("Preview") {
-                    GlassSurface {
-                        HStack {
-                            Image(systemName: "sparkles").foregroundStyle(theme.palette.accent)
-                            VStack(alignment: .leading) { Text("Perlog").font(.headline); Text("Your life, logged.").font(.caption).foregroundStyle(theme.palette.secondary) }
-                            Spacer()
-                            Image(systemName: "chevron.right").foregroundStyle(theme.palette.secondary)
+                        if theme.name == .custom {
+                            customControls
                         }
+
+                        previewCard
                     }
+                    .padding(18)
+                    .padding(.bottom, 30)
                 }
+                .scrollIndicators(.hidden)
             }
             .navigationTitle("Theme Studio")
             .navigationBarTitleDisplayMode(.inline)
-            .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } } }
-            .task { syncColors() }
-        }
-        .presentationDetents([.large])
-    }
-
-    private func syncColors() {
-        accentColor = Color(hex: theme.configuration.accentHex)
-        backgroundColor = Color(hex: theme.configuration.backgroundHex)
-        glassColor = Color(hex: theme.configuration.glassHex)
-        primaryColor = Color(hex: theme.configuration.primaryHex)
-        secondaryColor = Color(hex: theme.configuration.secondaryHex)
-    }
-
-    private func previewColor(_ name: String) -> Color {
-        switch name {
-        case "Black": return .black
-        case "White": return Color(white: 0.95)
-        case "Iridescent": return Color(hue: theme.configuration.hue / 360.0, saturation: 0.5, brightness: 0.95)
-        case "Custom": return Color(hex: theme.configuration.accentHex)
-        default: return Color(hex: "#E6E9EF")
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } }
+            }
         }
     }
 
-    private func description(_ name: String) -> String {
-        switch name {
-        case "Black": return "Deep, high-contrast glass"
-        case "White": return "Bright and frosted"
-        case "Iridescent": return "Soft hue-shifting glass"
-        case "Custom": return "Build your own palette"
-        default: return "Neutral frosted glass"
+    private var themeCards: some View {
+        LazyVGrid(columns: [GridItem(.flexible(), spacing: 10), GridItem(.flexible(), spacing: 10)], spacing: 10) {
+            ForEach(PerlogThemeName.allCases) { option in
+                Button {
+                    withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.18)) { theme.select(option) }
+                } label: {
+                    VStack(alignment: .leading, spacing: 9) {
+                        HStack {
+                            Circle()
+                                .fill(themePreviewColor(option))
+                                .frame(width: 14, height: 14)
+                            Text(option.rawValue)
+                                .font(.system(size: 13, weight: .bold, design: .rounded))
+                                .foregroundStyle(theme.palette.text)
+                            Spacer()
+                            if theme.name == option { Image(systemName: "checkmark.circle.fill").foregroundStyle(theme.palette.accent) }
+                        }
+                        RoundedRectangle(cornerRadius: 10, style: .continuous)
+                            .fill(themePreviewFill(option))
+                            .frame(height: 32)
+                    }
+                    .padding(12)
+                    .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 17, style: .continuous))
+                    .overlay(RoundedRectangle(cornerRadius: 17, style: .continuous).stroke(theme.palette.border, lineWidth: 0.8))
+                }
+                .buttonStyle(.plain)
+            }
+        }
+    }
+
+    private var iridescentControls: some View {
+        GlassCard {
+            VStack(alignment: .leading, spacing: 12) {
+                HStack {
+                    Text("Base hue")
+                        .font(.headline)
+                    Spacer()
+                    Text("\(Int(theme.hue.rounded()))°")
+                        .font(.caption.monospacedDigit())
+                        .foregroundStyle(theme.palette.secondaryText)
+                }
+                Slider(value: Binding(get: { theme.hue }, set: { theme.setHue($0) }), in: 0...360)
+                    .tint(theme.palette.accent)
+                HStack {
+                    Text("0°")
+                    Spacer()
+                    Text("360°")
+                }
+                .font(.caption2)
+                .foregroundStyle(theme.palette.secondaryText)
+                Button("Restore default hue") { theme.resetIridescent() }
+                    .font(.caption.bold())
+            }
+        }
+    }
+
+    private var customControls: some View {
+        GlassCard {
+            VStack(alignment: .leading, spacing: 14) {
+                Text("Custom palette")
+                    .font(.headline)
+                colorRow("Accent", theme.customAccent) { theme.setCustomAccent($0) }
+                colorRow("Background", theme.customBackground) { theme.setCustomBackground($0) }
+                colorRow("Glass tint", theme.customGlass) { theme.setCustomGlass($0) }
+                colorRow("Primary text", theme.customText) { theme.setCustomText($0) }
+                colorRow("Secondary text", theme.customSecondaryText) { theme.setCustomSecondaryText($0) }
+                Text("Contrast preview: \(contrastLabel)")
+                    .font(.caption)
+                    .foregroundStyle(theme.palette.secondaryText)
+                Button("Restore custom defaults") { theme.resetCustom() }
+                    .font(.caption.bold())
+            }
+        }
+    }
+
+    private func colorRow(_ title: String, _ color: Color, onChange: @escaping (Color) -> Void) -> some View {
+        HStack {
+            Text(title)
+            Spacer()
+            ColorPicker("", selection: Binding(get: { color }, set: { onChange($0) }))
+                .labelsHidden()
+        }
+    }
+
+    private var contrastLabel: String {
+        theme.palette.isDark ? "Dark surface / light text" : "Light surface / dark text"
+    }
+
+    private var previewCard: some View {
+        GlassCard {
+            VStack(alignment: .leading, spacing: 9) {
+                Text("Live preview")
+                    .font(.caption.bold())
+                    .foregroundStyle(theme.palette.secondaryText)
+                HStack(spacing: 10) {
+                    Image(systemName: "book.closed.fill")
+                        .foregroundStyle(theme.palette.accent)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Morning pages")
+                            .font(.headline)
+                        Text("Everything worth remembering.")
+                            .font(.caption)
+                            .foregroundStyle(theme.palette.secondaryText)
+                    }
+                    Spacer()
+                }
+            }
+        }
+    }
+
+    private func themePreviewColor(_ option: PerlogThemeName) -> Color {
+        switch option {
+        case .black: return .blue
+        case .grey: return .gray
+        case .white: return .purple
+        case .iridescent: return Color(hue: theme.hue / 360, saturation: 0.7, brightness: 1)
+        case .custom: return theme.customAccent
+        }
+    }
+
+    private func themePreviewFill(_ option: PerlogThemeName) -> Color {
+        switch option {
+        case .black: return Color.white.opacity(0.08)
+        case .grey: return Color.gray.opacity(0.18)
+        case .white: return Color.white.opacity(0.9)
+        case .iridescent: return theme.palette.accent.opacity(0.22)
+        case .custom: return theme.customGlass.opacity(0.45)
         }
     }
 }
 
-// MARK: - First-launch samples
+// MARK: - Shared helpers
 
-enum SeedEntries {
-    private static let key = "Perlog.DidSeedSamples.v2"
+struct PerlogSecondaryButtonStyle: ButtonStyle {
+    @Environment(\.isEnabled) private var isEnabled
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(.system(size: 13, weight: .bold, design: .rounded))
+            .padding(.vertical, 12)
+            .padding(.horizontal, 15)
+            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(.white.opacity(0.12), lineWidth: 0.8))
+            .opacity(isEnabled ? (configuration.isPressed ? 0.72 : 1) : 0.45)
+    }
+}
 
-    static func seedIfNeeded(context: ModelContext, existingCount: Int) {
-        guard !UserDefaults.standard.bool(forKey: key) else { return }
-        guard existingCount == 0 else {
-            UserDefaults.standard.set(true, forKey: key)
-            return
-        }
-
-        let calendar = Calendar.current
-        let now = Date.now
-        let yesterday = calendar.date(byAdding: .day, value: -1, to: now) ?? now
-        let morning = calendar.date(bySettingHour: 9, minute: 15, second: 0, of: yesterday) ?? yesterday
-        let evening = calendar.date(bySettingHour: 18, minute: 30, second: 0, of: yesterday) ?? yesterday
-
-        context.insert(LogEntry(
-            kind: .journal,
-            occurredAt: morning,
-            title: "Morning pages",
-            bodyText: "Woke up early today. A small thought is still worth logging.",
-            mood: .calm,
-            tags: ["sample", "journal"]
-        ))
-        context.insert(LogEntry(
-            kind: .mood,
-            occurredAt: evening,
-            title: "A good day",
-            bodyText: "Felt present and noticed a few small things I want to remember.",
-            mood: .happy,
-            tags: ["sample", "mood"]
-        ))
-        try? context.save()
-        UserDefaults.standard.set(true, forKey: key)
+@ViewBuilder
+func pageTitle(_ title: String, subtitle: String) -> some View {
+    VStack(alignment: .leading, spacing: 4) {
+        Text(title)
+            .font(.system(size: 30, weight: .bold, design: .rounded))
+        Text(subtitle)
+            .font(.subheadline)
+            .foregroundStyle(.secondary)
     }
 }

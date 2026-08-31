@@ -3,24 +3,29 @@ options:
   deploymentTarget:
     iOS: "17.0"
   createIntermediateGroups: true
+  developmentLanguage: en
 settings:
   base:
     SWIFT_VERSION: "5.0"
+    IPHONEOS_DEPLOYMENT_TARGET: "17.0"
     PRODUCT_BUNDLE_IDENTIFIER: com.perlog.app
     TARGETED_DEVICE_FAMILY: "1"
+    SUPPORTS_MACCATALYST: NO
 targets:
   Perlog:
     type: application
     platform: iOS
-    sources: [Perlog]
+    sources:
+      - Perlog
     settings:
       base:
         PRODUCT_NAME: Perlog
+        PRODUCT_BUNDLE_IDENTIFIER: com.perlog.app
         INFOPLIST_KEY_CFBundleDisplayName: Perlog
         INFOPLIST_KEY_LSApplicationCategoryType: public.app-category.lifestyle
         INFOPLIST_KEY_NSPhotoLibraryUsageDescription: "Perlog lets you choose photos to add to your personal log."
+        INFOPLIST_KEY_UIRequiresFullScreen: YES
         GENERATE_INFOPLIST_FILE: YES
-        SUPPORTS_MACCATALYST: NO
         CODE_SIGNING_ALLOWED: NO
         CODE_SIGNING_REQUIRED: NO
         CODE_SIGN_IDENTITY: ""
