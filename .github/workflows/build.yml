@@ -1,0 +1,71 @@
+name: Build Perlog (unsigned IPA for Sideloadly)
+
+on:
+  push:
+    branches: [ "main" ]
+  workflow_dispatch: {}
+
+jobs:
+  build:
+    runs-on: macos-15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Select Xcode
+        run: sudo xcode-select -s /Applications/Xcode_16.4.app/Contents/Developer
+
+      - name: Show Xcode version
+        run: xcodebuild -version
+
+      - name: Install XcodeGen
+        run: |
+          brew list xcodegen &>/dev/null || brew install xcodegen
+
+      - name: Generate Xcode project
+        run: xcodegen generate --spec project.yml
+
+      - name: Build unsigned app for generic iOS device
+        run: |
+          xcodebuild \
+            -project Perlog.xcodeproj \
+            -scheme Perlog \
+            -configuration Release \
+            -destination "generic/platform=iOS" \
+            -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            AD_HOC_CODE_SIGNING_ALLOWED=YES \
+            clean build
+
+      - name: Locate built .app
+        run: |
+          APP_PATH=$(find build -name "Perlog.app" -path "*Release-iphoneos*" -maxdepth 6 | head -n 1)
+          if [ -z "$APP_PATH" ]; then
+            echo "Could not find Perlog.app in build output"
+            find build -maxdepth 6
+            exit 1
+          fi
+          echo "Found app at $APP_PATH"
+          echo "APP_PATH=$APP_PATH" >> "$GITHUB_ENV"
+
+      - name: Package unsigned IPA
+        run: |
+          mkdir -p Payload
+          cp -R "$APP_PATH" Payload/Perlog.app
+          zip -r Perlog-unsigned.ipa Payload -x ".*"
+
+      - name: Upload IPA artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Perlog-unsigned-ipa
+          path: Perlog-unsigned.ipa
+          if-no-files-found: error
+
+      - name: Upload raw .app (optional, useful for debugging)
+        uses: actions/upload-artifact@v4
+        with:
+          name: Perlog-app-bundle
+          path: Payload/Perlog.app
+          if-no-files-found: error
